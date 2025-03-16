@@ -4,8 +4,8 @@ const ctx = outputCanvas.getContext('2d');
 const rightHandGestureElement = document.getElementById('rightHandGesture');
 const leftHandGestureElement = document.getElementById('leftHandGesture');
 
-// Initialize WebSocket connection
-const socket = io("https://19c4-202-8-116-114.ngrok-free.app"); // Replace with your Raspberry Pi's IP
+// Ngrok HTTPS URL
+const socket = io("https://19c4-202-8-116-114.ngrok-free.app"); // Replace with your Ngrok URL
 
 // ✅ Start Camera with Permission Handling
 async function startCamera() {
@@ -19,7 +19,6 @@ async function startCamera() {
         alert("Failed to access webcam. Please check camera permissions and try again.");
     }
 }
-
 
 // ✅ Initialize MediaPipe Hands
 const hands = new Hands({
@@ -37,8 +36,8 @@ hands.onResults((results) => {
     ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
     ctx.drawImage(results.image, 0, 0, outputCanvas.width, outputCanvas.height);
 
-    let rightHandGesture = "None";
-    let leftHandGesture = "None";
+    let rightHandGesture = 1; // Default to 1 (No Gesture Detected)
+    let leftHandGesture = "No Gesture Detected";
 
     if (results.multiHandLandmarks) {
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -56,7 +55,8 @@ hands.onResults((results) => {
         }
     }
 
-    rightHandGestureElement.textContent = `Right Hand: ${rightHandGesture}`;
+    // Update UI
+    rightHandGestureElement.textContent = `Right Hand: ${rightHandGesture === 1 ? "No Gesture" : rightHandGesture === 2 ? "Clockwise" : "Anti-clockwise"}`;
     leftHandGestureElement.textContent = `Left Hand: ${leftHandGesture}`;
 
     // Send gesture data to the server via WebSocket
@@ -78,11 +78,23 @@ socket.on('error', (error) => {
 
 // ✅ Detect Left Hand Gestures (Motor Control)
 function detectLeftHandGesture(landmarks) {
+    if (!landmarks || landmarks.length === 0) {
+        return "No Gesture Detected"; // Return default if no landmarks are detected
+    }
+
     const fingers = [8, 12, 16, 20]; // Index, Middle, Ring, Little
     let extendedFingers = [];
 
     for (let i = 0; i < fingers.length; i++) {
-        if (landmarks[fingers[i]].y < landmarks[fingers[i] - 2].y) {
+        const fingertip = landmarks[fingers[i]];
+        const fingerBase = landmarks[fingers[i] - 2];
+
+        // Check if landmarks exist and are valid
+        if (!fingertip || !fingerBase || !fingertip.y || !fingerBase.y) {
+            continue; // Skip if landmarks are missing or invalid
+        }
+
+        if (fingertip.y < fingerBase.y) {
             extendedFingers.push(fingers[i]);
         }
     }
@@ -104,11 +116,25 @@ function detectLeftHandGesture(landmarks) {
 
 // ✅ Detect Right Hand Gestures (Direction Control)
 function detectRightHandGesture(landmarks) {
+    if (!landmarks || landmarks.length === 0) {
+        return 1; // Return 1 for "No Gesture Detected"
+    }
+
     const thumbTip = landmarks[4];
     const indexTip = landmarks[8];
 
+    // Check if landmarks exist and are valid
+    if (!thumbTip || !indexTip || !thumbTip.x || !thumbTip.y || !indexTip.x || !indexTip.y) {
+        return 1; // Return 1 for "No Gesture Detected"
+    }
+
     const distance = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-    return distance < 0.1 ? "Rotate Clockwise" : "Rotate Anticlockwise";
+
+    if (distance < 0.1) {
+        return 2; // Return 2 for "Clockwise"
+    } else {
+        return 3; // Return 3 for "Anti-clockwise"
+    }
 }
 
 // ✅ Start Everything After Page Loads
@@ -126,4 +152,3 @@ window.onload = async () => {
     camera.start();
     console.log("MediaPipe Hands initialized successfully");
 };
-
