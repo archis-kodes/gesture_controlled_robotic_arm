@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+body {
+    font-family: 'League Spartan', sans-serif;
+    background: url('gesture_bg_pc.png') no-repeat top center;
+    background-size: cover;
+    text-align: center;
+    overflow: hidden;
+}
+
+/* Fixed Heading at the Top */
+#heading {
+    font-size: 40px;
+    font-weight: 700;
+    color: white;
+    background: black;
+    padding: 20px;
+    width: 720px;
+    text-align: center;
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    border-radius: 10px;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding-top: 100px; /* Push content below the fixed header */
+}
+
+canvas {
+    border: 2px solid black;
+    border-radius: 10px;
+    width: 720px;
+    height: 540px;
+}
+
+/* Gesture Text Positioned Below the Video */
+#gesture-container {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 720px;
+}
+
+#rightHandGesture, #leftHandGesture {
+    font-size: 24px;
+    font-weight: bold;
+    background: black;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 10px;
+    margin: 5px 0;
+    width: 100%;
+    text-align: center;
+}
+
+/* Hide Base Video Feed */
+video {
+    display: none;
+}
+
+/* Disable Zooming */
+html, body {
+    touch-action: manipulation;
+    overflow-x: hidden;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Prevent Text Selection and Image Dragging */
+body, img, a, button {
+    -webkit-user-drag: none;
+}
+
+/* Disable Tap Highlight */
+body {
+    -webkit-tap-highlight-color: transparent;
+}
