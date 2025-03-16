@@ -4,23 +4,9 @@ const ctx = outputCanvas.getContext('2d');
 const rightHandGestureElement = document.getElementById('rightHandGesture');
 const leftHandGestureElement = document.getElementById('leftHandGesture');
 
-const FLASK_SERVER = "http://b869-202-8-116-114.ngrok-free.app/update_gesture"; // Auto-detect Raspberry Pi IP
+// Initialize WebSocket connection
+const socket = io("https://19c4-202-8-116-114.ngrok-free.app"); // Replace with your Raspberry Pi's IP
 
-function sendGestureData(rightHand, leftHand) {
-    console.log(`🔹 Sending → Right: ${rightHand}, Left: ${leftHand}`); // ✅ Log gesture data
-
-    fetch(FLASK_SERVER, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            right_hand: rightHand,
-            left_hand: leftHand
-        })
-    })
-    .then(response => response.json())
-    .then(data => console.log("✅ Server Response:", data)) // ✅ Log Flask response
-    .catch(err => console.error("❌ Failed to send:", err)); // ❌ Log error details
-}
 // ✅ Start Camera with Permission Handling
 async function startCamera() {
     try {
@@ -33,6 +19,7 @@ async function startCamera() {
         alert("Failed to access webcam. Please check camera permissions and try again.");
     }
 }
+
 
 // ✅ Initialize MediaPipe Hands
 const hands = new Hands({
@@ -72,29 +59,22 @@ hands.onResults((results) => {
     rightHandGestureElement.textContent = `Right Hand: ${rightHandGesture}`;
     leftHandGestureElement.textContent = `Left Hand: ${leftHandGesture}`;
 
-    sendGestureData(rightHandGesture, leftHandGesture);
+    // Send gesture data to the server via WebSocket
+    socket.emit('update_gesture', {
+        right_hand: rightHandGesture,
+        left_hand: leftHandGesture
+    });
 });
 
-// ✅ Send Gesture Data to Flask Every 200ms
-let lastSentTime = 0;
-function sendGestureData(rightHand, leftHand) {
-    let currentTime = Date.now();
-    if (currentTime - lastSentTime >= 200) {
-        lastSentTime = currentTime;
+// Listen for servo updates from the server
+socket.on('servo_update', (angles) => {
+    console.log("Servo Angles Updated:", angles);
+});
 
-        fetch(FLASK_SERVER, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                right_hand: rightHand,
-                left_hand: leftHand
-            })
-        })
-        .then(response => response.json())
-        .then(data => console.log("Server Response:", data))
-        .catch(err => console.error("Failed to send:", err));
-    }
-}
+// Listen for errors from the server
+socket.on('error', (error) => {
+    console.error("Server Error:", error.message);
+});
 
 // ✅ Detect Left Hand Gestures (Motor Control)
 function detectLeftHandGesture(landmarks) {
@@ -146,3 +126,4 @@ window.onload = async () => {
     camera.start();
     console.log("MediaPipe Hands initialized successfully");
 };
+
