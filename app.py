@@ -1,17 +1,19 @@
-from flask import Flask, send_from_directory, request, jsonify
-from flask_cors import CORS
+from flask import Flask, send_from_directory
+from flask_socketio import SocketIO, emit
 from adafruit_servokit import ServoKit
 import os
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Allow JavaScript requests
+app.config['SECRET_KEY'] = 'your_secret_key'
+socketio = SocketIO(app, cors_allowed_origins="*")  # Allow all origins for WebSocket connections
 
 # Initialize PCA9685 Servo Driver
 kit = ServoKit(channels=16)
 
-# Store servo angles
-servo_angles = {0: 90, 1: 90, 2: 90, 3: 90, 4: 90, 5: 90}  # Default positions
+# Store servo angles (start from current position)
+servo_angles = {0: kit.servo[0].angle, 1: kit.servo[1].angle, 2: kit.servo[2].angle,
+                3: kit.servo[3].angle, 4: kit.servo[4].angle, 5: kit.servo[5].angle}
 STEP_ANGLE = 1  # Rotate by 1 degree per detection cycle
 
 # Serve the index.html file from the website folder
@@ -24,11 +26,10 @@ def serve_index():
 def serve_static(path):
     return send_from_directory("website", path)
 
-# API to receive gestures and control servos
-@app.route("/update_gesture", methods=["POST"])
-def update_gesture():
+# WebSocket event handler for gesture updates
+@socketio.on('update_gesture')
+def handle_gesture(data):
     try:
-        data = request.json
         right_hand = data.get("right_hand", "")
         left_hand = data.get("left_hand", "")
 
@@ -55,13 +56,14 @@ def update_gesture():
 
             # Apply smooth rotation
             kit.servo[pin].angle = servo_angles[pin]
-            print(f"{left_hand} on Pin {pin} rotated to {servo_angles[pin]}°")
 
-        return jsonify({"status": "success", "servo_angles": servo_angles})
+        # Emit the updated servo angles back to the client
+        emit('servo_update', servo_angles)
 
     except Exception as e:
         print(f"Error: {e}")
-        return jsonify({"status": "error", "message": str(e)})
+        emit('error', {"message": str(e)})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+
