@@ -1,69 +1,107 @@
 from flask import Flask, send_from_directory
 from flask_socketio import SocketIO, emit
-from adafruit_servokit import ServoKit
-import os
+from flask import request  # Explicitly import request
+import serial
+import time
+from datetime import datetime
+from colorama import init, Fore, Back, Style
+
+# Initialize colorama
+init(autoreset=True)
+
 
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
-socketio = SocketIO(app, cors_allowed_origins="*")  # Allow all origins for WebSocket connections
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Initialize PCA9685 Servo Driver
-kit = ServoKit(channels=16)
+# Initialize serial connection to Arduino
+try:
+    arduino = serial.Serial('/dev/ttyACM0', 9600)  # Linux/Mac
+    # arduino = serial.Serial('COM3', 9600)        # Windows
+    time.sleep(2)  # Allow time for connection to stabilize
+    print(Fore.GREEN + "✓ Arduino connected successfully")
+except Exception as e:
+    print(Fore.RED + f"✗ Arduino connection failed: {e}")
+    arduino = None
 
-# Store servo angles (start from current position)
-servo_angles = {0: kit.servo[0].angle, 1: kit.servo[1].angle, 2: kit.servo[2].angle,
-                3: kit.servo[3].angle, 4: kit.servo[4].angle, 5: kit.servo[5].angle}
-STEP_ANGLE = 1  # Rotate by 1 degree per detection cycle
+# Track previous command
+prev_command = None
 
-# Serve the index.html file from the website folder
+def log_received_data(data):
+    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"\n{Fore.CYAN}╔═══════════════════════════════════")
+    print(f"{Fore.CYAN}║ {Fore.YELLOW}📥 Received Data @ {timestamp}")
+    print(f"{Fore.CYAN}╠───────────────────────────────────")
+    print(f"{Fore.CYAN}║ {Fore.WHITE}Command: {Fore.GREEN}{data.get('command', 'None')}")
+    print(f"{Fore.CYAN}╚═══════════════════════════════════")
+
+def log_serial_send(command):
+    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"{Fore.MAGENTA}╔► {Fore.BLUE}SERIAL {Fore.WHITE}@ {timestamp}")
+    print(f"{Fore.MAGENTA}║  Sending: {Fore.GREEN}{command}")
+    print(f"{Fore.MAGENTA}╚═{'═'*30}")
+
 @app.route("/")
 def serve_index():
     return send_from_directory("website", "index.html")
 
-# Serve static files (CSS, JS, images) from website folder
 @app.route("/<path:path>")
 def serve_static(path):
     return send_from_directory("website", path)
 
-# WebSocket event handler for gesture updates
+@socketio.on('connect')
+def handle_connect():
+    client_ip = request.remote_addr or request.environ.get('REMOTE_ADDR', 'unknown')
+    print(Fore.GREEN + f"\n★ Client connected from {client_ip}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(Fore.YELLOW + "\n★ Client disconnected")
+
 @socketio.on('update_gesture')
 def handle_gesture(data):
+    global prev_command
+    
     try:
-        right_hand = data.get("right_hand", "")
-        left_hand = data.get("left_hand", "")
+        command = data.get("command", "A").upper().strip()
+        valid_commands = "ABCDEFGHIJKLM"
+        
+        # Log received data with visualization
+        log_received_data(data)
+        
+        # Validate command
+        if command not in valid_commands:
+            command = "A"
+            print(Fore.RED + f"⚠️  Invalid command received, defaulting to 'A'")
 
-        print(f"Received Gesture: Right Hand - {right_hand}, Left Hand - {left_hand}")
-
-        # Define motor-pin mappings
-        motor_pins = {
-            "Motor 1": 0,
-            "Motor 2": 1,
-            "Motor 3": 2,
-            "Motor 4": 3,
-            "Motor 5": 4,
-            "Motor 6": 5
-        }
-
-        # Rotate servos based on detected gestures
-        if left_hand in motor_pins:
-            pin = motor_pins[left_hand]
-
-            if right_hand == "Rotate Clockwise" and servo_angles[pin] < 180:
-                servo_angles[pin] += STEP_ANGLE
-            elif right_hand == "Rotate Anticlockwise" and servo_angles[pin] > 0:
-                servo_angles[pin] -= STEP_ANGLE
-
-            # Apply smooth rotation
-            kit.servo[pin].angle = servo_angles[pin]
-
-        # Emit the updated servo angles back to the client
-        emit('servo_update', servo_angles)
+        # Only send if command changed and Arduino is connected
+        if command != prev_command:
+            if arduino is not None:
+                arduino.write(f"{command}\r\n".encode())
+                log_serial_send(command)
+                prev_command = command
+                
+                emit('uart_response', {
+                    "status": "success",
+                    "message": f"Sent: {command}"
+                })
+            else:
+                print(Fore.RED + "⚠️  Arduino not connected - command not sent")
+                emit('error', {"message": "Arduino not connected"})
+        else:
+            print(Fore.YELLOW + "🔄 Command unchanged (not resent)")
+            emit('uart_response', {
+                "status": "no_change",
+                "message": f"Command unchanged: {command}"
+            })
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(Fore.RED + f"🔥 Error: {e}")
         emit('error', {"message": str(e)})
 
 if __name__ == "__main__":
+    print(Fore.CYAN + "\n═══════════════════════════════════")
+    print(Fore.CYAN + "   Gesture Control Server Started")
+    print(Fore.CYAN + "═══════════════════════════════════\n")
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)
-
