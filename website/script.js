@@ -5,7 +5,12 @@ const rightHandGestureElement = document.getElementById('rightHandGesture');
 const leftHandGestureElement = document.getElementById('leftHandGesture');
 
 // Ngrok HTTPS URL
-const socket = io("https://19c4-202-8-116-114.ngrok-free.app"); // Replace with your Ngrok URL
+const socket = io("https://d05d-202-8-116-205.ngrok-free.app"); // Replace with your Ngrok URL
+
+// Track previous gestures to avoid sending duplicate data
+let previousRightHandGesture = null;
+let previousLeftHandGesture = null;
+let previousCommand = null;
 
 // ✅ Start Camera with Permission Handling
 async function startCamera() {
@@ -38,6 +43,7 @@ hands.onResults((results) => {
 
     let rightHandGesture = 1; // Default to 1 (No Gesture Detected)
     let leftHandGesture = "No Gesture Detected";
+    let currentCommand = "A"; // Default command
 
     if (results.multiHandLandmarks) {
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -55,20 +61,52 @@ hands.onResults((results) => {
         }
     }
 
+    // Determine command based on gesture combination
+    if (rightHandGesture === 1) {
+        currentCommand = "A";
+    } else if (leftHandGesture === "Motor 1") {
+        currentCommand = rightHandGesture === 2 ? "B" : "C";
+    } else if (leftHandGesture === "Motor 2") {
+        currentCommand = rightHandGesture === 2 ? "D" : "E";
+    } else if (leftHandGesture === "Motor 3") {
+        currentCommand = rightHandGesture === 2 ? "F" : "G";
+    } else if (leftHandGesture === "Motor 4") {
+        currentCommand = rightHandGesture === 2 ? "H" : "I";
+    } else if (leftHandGesture === "Motor 5") {
+        currentCommand = rightHandGesture === 2 ? "J" : "K";
+    } else if (leftHandGesture === "Motor 6") {
+        currentCommand = rightHandGesture === 2 ? "L" : "M";
+    } else {
+        currentCommand = "A"; // Default for any other combination
+    }
+
     // Update UI
     rightHandGestureElement.textContent = `Right Hand: ${rightHandGesture === 1 ? "No Gesture" : rightHandGesture === 2 ? "Clockwise" : "Anti-clockwise"}`;
     leftHandGestureElement.textContent = `Left Hand: ${leftHandGesture}`;
 
-    // Send gesture data to the server via WebSocket
-    socket.emit('update_gesture', {
-        right_hand: rightHandGesture,
-        left_hand: leftHandGesture
-    });
+    // Only send command if it has changed
+    if (currentCommand !== previousCommand) {
+        socket.emit('update_gesture', {
+            command: currentCommand
+        });
+        
+        console.log('Sending new command:', currentCommand);
+        previousCommand = currentCommand;
+        
+        // Still track previous gestures for change detection
+        previousRightHandGesture = rightHandGesture;
+        previousLeftHandGesture = leftHandGesture;
+    }
 });
 
 // Listen for servo updates from the server
 socket.on('servo_update', (angles) => {
     console.log("Servo Angles Updated:", angles);
+});
+
+// Listen for uart responses from the server
+socket.on('uart_response', (response) => {
+    console.log("Server response:", response);
 });
 
 // Listen for errors from the server
@@ -79,7 +117,7 @@ socket.on('error', (error) => {
 // ✅ Detect Left Hand Gestures (Motor Control)
 function detectLeftHandGesture(landmarks) {
     if (!landmarks || landmarks.length === 0) {
-        return "No Gesture Detected"; // Return default if no landmarks are detected
+        return "No Gesture Detected";
     }
 
     const fingers = [8, 12, 16, 20]; // Index, Middle, Ring, Little
@@ -89,9 +127,8 @@ function detectLeftHandGesture(landmarks) {
         const fingertip = landmarks[fingers[i]];
         const fingerBase = landmarks[fingers[i] - 2];
 
-        // Check if landmarks exist and are valid
         if (!fingertip || !fingerBase || !fingertip.y || !fingerBase.y) {
-            continue; // Skip if landmarks are missing or invalid
+            continue;
         }
 
         if (fingertip.y < fingerBase.y) {
@@ -108,8 +145,8 @@ function detectLeftHandGesture(landmarks) {
     if (extendedFingers.length === 2 && extendedFingers.includes(12)) return "Motor 2";
     if (extendedFingers.length === 3 && extendedFingers.includes(16)) return "Motor 3";
     if (extendedFingers.length === 4 && extendedFingers.includes(20)) return "Motor 4";
-    if (littleExtended && ringExtended) return "Motor 5"; // Little + Ring
-    if (littleExtended && extendedFingers.length === 1) return "Motor 6"; // Only Little Finger
+    if (littleExtended && ringExtended) return "Motor 5";
+    if (littleExtended && extendedFingers.length === 1) return "Motor 6";
 
     return "Unknown Gesture";
 }
@@ -117,29 +154,23 @@ function detectLeftHandGesture(landmarks) {
 // ✅ Detect Right Hand Gestures (Direction Control)
 function detectRightHandGesture(landmarks) {
     if (!landmarks || landmarks.length === 0) {
-        return 1; // Return 1 for "No Gesture Detected"
+        return 1;
     }
 
     const thumbTip = landmarks[4];
     const indexTip = landmarks[8];
 
-    // Check if landmarks exist and are valid
     if (!thumbTip || !indexTip || !thumbTip.x || !thumbTip.y || !indexTip.x || !indexTip.y) {
-        return 1; // Return 1 for "No Gesture Detected"
+        return 1;
     }
 
     const distance = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-
-    if (distance < 0.1) {
-        return 2; // Return 2 for "Clockwise"
-    } else {
-        return 3; // Return 3 for "Anti-clockwise"
-    }
+    return distance < 0.1 ? 2 : 3;
 }
 
 // ✅ Start Everything After Page Loads
 window.onload = async () => {
-    await startCamera(); // Ensure the camera starts before processing
+    await startCamera();
     console.log("Initializing MediaPipe Hands...");
 
     const camera = new Camera(video, {
@@ -152,3 +183,4 @@ window.onload = async () => {
     camera.start();
     console.log("MediaPipe Hands initialized successfully");
 };
+
